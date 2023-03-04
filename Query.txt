@@ -1,0 +1,157 @@
+#Task 1
+
+select distinct market
+from dim_customer
+where customer = 'Atliq Exclusive' and region = 'APAC';
+
+
+
+#Task 2
+
+with unique_prod_2020 as 
+            (select count(distinct product_code) as unique_product_2020
+             from fact_gross_price
+             where fiscal_year = 2020),
+unique_prod_2021 as
+            (select count(distinct product_code) as unique_product_2021
+	       from fact_gross_price
+	       where fiscal_year = 2021)
+select *, round((unique_product_2021-unique_product_2020)*100/unique_product_2020, 2) as percentage_chg
+from unique_prod_2020
+cross join unique_prod_2021;
+			
+
+
+#Task 3
+ 
+ select segment, count(distinct product_code) as product_count
+ from dim_product
+ group by segment
+ order by product_count desc;
+
+
+
+#Task 4
+
+with unique_prod_2020 as
+	 (select p.segment as segment,
+        count(distinct (p.product_code) ) as product_count_2020
+     from dim_product p
+     join fact_gross_price gp
+     on gp.product_code = p.product_code
+     where fiscal_year = 2020
+     group by segment),
+unique_prod_2021 as 
+	 (select p.segment as segment,
+        count(distinct (p.product_code) ) as product_count_2021
+     from dim_product p
+     join fact_gross_price gp
+     on gp.product_code = p.product_code
+     where fiscal_year = 2021
+     group by segment)
+select unique_prod_2020.segment as segment,
+       product_count_2020, product_count_2021,
+       round(product_count_2021-product_count_2020) as difference
+from unique_prod_2020
+join unique_prod_2021
+on unique_prod_2020.segment= unique_prod_2021.segment
+order by difference desc;
+
+
+
+#Task 5
+
+select p.product_code, p.product, c.manufacturing_cost
+from dim_product p
+join fact_manufacturing_cost c
+on p.product_code = c.product_code
+where manufacturing_cost = (select min(manufacturing_cost) from fact_manufacturing_cost)
+or manufacturing_cost =  (select max(manufacturing_cost) from fact_manufacturing_cost)
+order by manufacturing_cost desc;
+
+
+
+#Task 6
+
+select i.customer_code,
+       c.customer,
+       concat(round(avg(pre_invoice_discount_pct)*100,2),'%') as avg_discount_percentage
+from fact_pre_invoice_deductions i
+join dim_customer c
+on c.customer_code = i.customer_code 
+where fiscal_year = 2021 and c.market = 'india'
+group by c.customer_code
+order by avg(pre_invoice_discount_pct) desc
+limit 5;
+
+
+
+#Task 7
+
+SELECT 
+MONTHNAME(date) as month, year(date) AS year,
+ROUND(SUM((f.sold_quantity*g.gross_price))/1000000,2) AS Gross_sales_Amount
+FROM dim_customer c
+JOIN fact_sales_monthly f 
+ON c.customer_code = f.customer_code
+JOIN fact_gross_price g 
+ON f.product_code = g.product_code 
+AND f.fiscal_year = g.fiscal_year
+WHERE c.customer = "Atliq Exclusive"
+GROUP BY month, year
+order by year;
+
+
+
+#Task 8
+
+select 
+case
+     WHEN month(date) in (9,10,11) then "Q1"
+     WHEN month(date) in (12,01,02) then "Q2"
+     WHEN month(date) in (03,04,05) then "Q3"
+     else "Q4" 
+     End As Quatter,
+     round(sum(sold_quantity)/1000000,2) as total_sold_quantity_in_millions
+from fact_sales_monthly
+where fiscal_year = 2020
+group by quatter
+order by total_sold_quantity_in_millions desc;
+
+
+
+#Task 9
+
+with gross_sales as
+          (select c.channel,sum(gross_price*sold_quantity) as total_sale
+		   from dim_customer c
+           join fact_sales_monthly s
+           on c.customer_code = s.customer_code
+           join fact_gross_price p
+           on p.product_code = s.product_code
+           where p.fiscal_year = 2021
+           group by channel)
+select channel, round(total_sale/1000000,2) as gross_sales_mln, 
+concat(round(total_sale/(sum(total_sale)over())*100,2),'%') AS percentage 
+from gross_sales
+order by percentage desc;
+
+
+
+#Task 10
+
+ with cte as
+       (select division, product_code, 
+       CONCAT(product, "-", variant) AS product,
+       sum(sold_quantity) as total_sold_quantity
+       from dim_product 
+       join fact_sales_monthly  
+       using (product_code)
+       where fiscal_year = 2021
+       group by division, product_code),
+rnk as
+      (select *, 
+      dense_rank() over (partition by division order by total_sold_quantity desc) as rank_order from cte)
+select * 
+from rnk
+where rank_order <4;
